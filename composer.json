@@ -1,5 +1,5 @@
 {
-    "name": "idplein-twinfield-booking",
+    "name": "idplein/twinfield-booking",
     "version": "1.2.2",
     "description": "Package to book invoices to twinfield",
     "require": {
