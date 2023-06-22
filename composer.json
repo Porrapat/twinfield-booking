@@ -1,0 +1,36 @@
+{
+    "name": "qlic/twinfield-booking",
+    "version": "1.2.2",
+    "description": "Package to book invoices to twinfield",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "ssh://git@gitlab.qlic.nl/packages/twinfield-php-qlic-fork"
+        }
+    ],
+    "require": {
+        "php-twinfield/twinfield": "dev-main",
+        "moneyphp/money": "^3.1",
+        "carbondate/carbon": "^1.33",
+        "myclabs/php-enum": "^1.6",
+        "league/oauth2-client": "^2.6"
+    },
+    "authors": [
+        {
+            "name": "Jelle Roorda",
+            "email": "jelle@qlic.nl"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Qlic\\Twinfield\\Booking\\": "src"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Qlic\\Twinfield\\Booking\\Providers\\TwinfieldBookingServiceProvider"
+            ]
+        }
+    }
+}
