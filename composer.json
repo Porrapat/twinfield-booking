@@ -3,7 +3,7 @@
     "version": "1.2.2",
     "description": "Package to book invoices to twinfield",
     "require": {
-        "php-twinfield/twinfield": "dev-main",
+        "php-twinfield/twinfield": "^3.0.0",
         "moneyphp/money": "^3.1",
         "carbondate/carbon": "*",
         "myclabs/php-enum": "^1.6",
