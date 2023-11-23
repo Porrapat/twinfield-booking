@@ -28,6 +28,8 @@ use Qlic\Twinfield\Booking\Generators\DetailLineGenerator;
 use Qlic\Twinfield\Booking\Generators\TotalLineGenerator;
 use Qlic\Twinfield\Booking\Generators\TwinfieldCodeGenerator;
 use Qlic\Twinfield\Booking\Models\Supplier;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Arr;
 
 class TwinfieldInvoiceBooker implements InvoiceBookerContract
 {
@@ -61,51 +63,76 @@ class TwinfieldInvoiceBooker implements InvoiceBookerContract
      */
     public function createSalesTransaction(InvoiceContract $invoice, string $refreshToken, string $officeCode)
     {
-        $connector = new TransactionApiConnector($this->getTwinfieldConnection($refreshToken, $officeCode));
+		try {
+			$connector = new TransactionApiConnector($this->getTwinfieldConnection($refreshToken, $officeCode));
+			
+			// Log input values
+            Log::info("Creating sales transaction for invoice: " . json_encode($invoice->toArray()));
 
-        // Prepare transaction
-        $transaction = new SalesTransaction;
-        $transaction->setDestiny(Destiny::TEMPORARY())
-            ->setCurrency($invoice->getCurrency())
-            ->setDateFromString($invoice->getInvoiceDate()->format("Ymd"))
-            ->setPeriod($invoice->getInvoiceDate()->format("Y/m"))
-            ->setInvoiceNumber($invoice->getInvoiceNumber())
-            // TODO change due date
-         //   ->setDueDate(now()->addMonth())
-            ->setCode(config('twinfield-booking.transactions.sales.day_book'));
+			// Prepare transaction
+			$transaction = new SalesTransaction;
+			$transaction->setDestiny(Destiny::TEMPORARY())
+				->setCurrency($invoice->getCurrency())
+				->setDateFromString($invoice->getInvoiceDate()->format("Ymd"))
+				->setPeriod($invoice->getInvoiceDate()->format("Y/m"))
+				->setInvoiceNumber($invoice->getInvoiceNumber())
+				// TODO change due date
+			 //   ->setDueDate(now()->addMonth())
+				->setCode(config('twinfield-booking.transactions.sales.day_book'));
 
-        if (!is_null($invoice->getTwinfieldNumber())) {
-            $transaction->setNumber($invoice->getTwinfieldNumber());
+			if (!is_null($invoice->getTwinfieldNumber())) {
+				$transaction->setNumber($invoice->getTwinfieldNumber());
+			}
+
+			if (!is_null($this->office)) {
+				$transaction->setOffice($this->office);
+			}
+
+			// Line ID's needed for the   transaction lines
+			$lineID = 1;
+
+			// Create total line on transaction
+			$transaction->addLine(TotalLineGenerator::create($transaction, $invoice, $lineID));
+			$lineID++;
+
+			// Create detail lines
+			foreach ($invoice->getLines() as $invoiceLine) {
+                // Log each line value
+                Log::info("Adding detail line to transaction: " . json_encode($invoiceLine->toArray()));
+                
+				$transaction->addLine(DetailLineGenerator::create($transaction, $invoiceLine, $lineID));
+				$lineID++;
+			}
+
+			// Create VAT line
+			// Commented this out, because we don't need to explicitly state the vat, because we already did so
+			// on the detail lines. Maybe add a trigger or something to enable the Vat line.
+			// $transaction->addLine(VatLineGenerator::create($transaction, $invoice, $lineID));
+
+			/** @var SalesTransaction $twinTransaction */
+			$twinTransaction = $connector->send($transaction);
+
+            // Log success
+            Log::info('Sales transaction created successfully.', [
+                'invoice_number' => $invoice->getInvoiceNumber(),
+                'twinfield_number' => $twinTransaction->getNumber(),
+            ]);
+
+			$invoice->callback($twinTransaction);
+
+			return $twinTransaction;
+            
+        } catch (\Exception $exception) {
+            // Log error
+            Log::error('Error creating sales transaction.', [
+                'invoice_number' => $invoice->getInvoiceNumber(),
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+            ]);
+
+            // Re-throw the exception to allow it to be handled elsewhere
+            throw $exception;
         }
-
-        if (!is_null($this->office)) {
-            $transaction->setOffice($this->office);
-        }
-
-        // Line ID's needed for the   transaction lines
-        $lineID = 1;
-
-        // Create total line on transaction
-        $transaction->addLine(TotalLineGenerator::create($transaction, $invoice, $lineID));
-        $lineID++;
-
-        // Create detail lines
-        foreach ($invoice->getLines() as $invoiceLine) {
-            $transaction->addLine(DetailLineGenerator::create($transaction, $invoiceLine, $lineID));
-            $lineID++;
-        }
-
-        // Create VAT line
-        // Commented this out, because we don't need to explicitly state the vat, because we already did so
-        // on the detail lines. Maybe add a trigger or something to enable the Vat line.
-        // $transaction->addLine(VatLineGenerator::create($transaction, $invoice, $lineID));
-
-        /** @var SalesTransaction $twinTransaction */
-        $twinTransaction = $connector->send($transaction);
-
-        $invoice->callback($twinTransaction);
-
-        return $twinTransaction;
     }
 
     /**
@@ -215,48 +242,69 @@ class TwinfieldInvoiceBooker implements InvoiceBookerContract
      */
     public function createOrUpdateProject(ProjectContract $project, string $refreshToken, string $officeCode)
     {
-        $connector = new ProjectApiConnector($this->getTwinfieldConnection($refreshToken, $officeCode));
+		try {
+            $connector = new ProjectApiConnector($this->getTwinfieldConnection($refreshToken, $officeCode));
 
-        // TODO: test if 'null' shortname (or any field) clears the field, or it fucks up
-        $twinProject = new Project;
-        $twinProject
-            ->setName($project->getName())
-            ->setValidFromString($project->getValidFrom())
-            ->setValidToString($project->getValidTo())
-            ->setAuthoriser($project->getAuthoriser())
-            ->setCustomer($project->getCustomer())
-            ->setBillable($project->getBillable())
-            ->setRate($project->getRate());
+            // Log the input project in JSON format
+            Log::info('Input Project: ', ['project_data' => Arr::wrap($project)]);
 
-        if (!is_null($project->getStatus())) {
-            $twinProject->setStatus($project->getStatus());
+            // TODO: test if 'null' shortname (or any field) clears the field, or it fucks up
+			$twinProject = new Project;
+			$twinProject
+				->setName($project->getName())
+				->setValidFromString($project->getValidFrom())
+				->setValidToString($project->getValidTo())
+				->setAuthoriser($project->getAuthoriser())
+				->setCustomer($project->getCustomer())
+				->setBillable($project->getBillable())
+				->setRate($project->getRate());
+
+			if (!is_null($project->getStatus())) {
+				$twinProject->setStatus($project->getStatus());
+			}
+
+			if (!is_null($project->getQuantities())) {
+				$twinProject->setQuantities($project->getQuantities());
+			}
+
+			if (!is_null($project->getCode())) {
+				$twinProject->setCode($project->getCode());
+			}
+
+			if (!is_null($project->getShortName())) {
+				$twinProject->setShortName($project->getShortName());
+			}
+
+			if (!is_null($project->getInvoiceDescription())) {
+				$twinProject->setInvoiceDescription($project->getInvoiceDescription());
+			}
+
+			if (!is_null($this->office)) {
+				$twinProject->setOffice($this->office);
+			}
+
+			$responseProject = $connector->send($twinProject);
+
+            // Log success
+            Log::info('Project created or updated successfully.', [
+                'project_code' => $project->getCode(),
+                'response_project_code' => $responseProject->getCode(),
+            ]);
+
+			$project->callback($responseProject);
+
+            return $responseProject;
+        } catch (\Exception $exception) {
+           // Log error
+            Log::error('Error creating or updating project.', [
+                'project_code' => $project->getCode(),
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+            ]);
+
+            // Re-throw the exception to allow it to be handled elsewhere
+            throw $exception;
         }
-
-        if (!is_null($project->getQuantities())) {
-            $twinProject->setQuantities($project->getQuantities());
-        }
-
-        if (!is_null($project->getCode())) {
-            $twinProject->setCode($project->getCode());
-        }
-
-        if (!is_null($project->getShortName())) {
-            $twinProject->setShortName($project->getShortName());
-        }
-
-        if (!is_null($project->getInvoiceDescription())) {
-            $twinProject->setInvoiceDescription($project->getInvoiceDescription());
-        }
-
-        if (!is_null($this->office)) {
-            $twinProject->setOffice($this->office);
-        }
-
-        $responseProject = $connector->send($twinProject);
-
-        $project->callback($responseProject);
-
-        return $responseProject;
     }
 
     /**
