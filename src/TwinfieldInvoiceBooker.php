@@ -67,7 +67,7 @@ class TwinfieldInvoiceBooker implements InvoiceBookerContract
 			$connector = new TransactionApiConnector($this->getTwinfieldConnection($refreshToken, $officeCode));
 			
 			// Log input values
-            Log::info("Creating sales transaction for invoice: " . json_encode($invoice->toArray()));
+            		Log::info("Creating sales transaction for invoice: " . json_encode($invoice));
 
 			// Prepare transaction
 			$transaction = new SalesTransaction;
@@ -97,8 +97,8 @@ class TwinfieldInvoiceBooker implements InvoiceBookerContract
 
 			// Create detail lines
 			foreach ($invoice->getLines() as $invoiceLine) {
-                // Log each line value
-                Log::info("Adding detail line to transaction: " . json_encode($invoiceLine->toArray()));
+                		// Log each line value
+                		Log::info("Adding detail line to transaction: " . json_encode($invoiceLine));
                 
 				$transaction->addLine(DetailLineGenerator::create($transaction, $invoiceLine, $lineID));
 				$lineID++;
